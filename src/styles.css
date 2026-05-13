@@ -59,13 +59,13 @@ button {
 }
 
 .login-brand span {
-  color: #64748b;
+  color: #475569;
 }
 
 .login-hint,
 .error-message {
   margin: 14px 0 0;
-  color: #64748b;
+  color: #475569;
   text-align: center;
 }
 
@@ -75,18 +75,24 @@ button {
 }
 
 .logout-button {
-  position: fixed;
-  right: 24px;
-  bottom: 24px;
+  margin-top: auto;
   display: inline-flex;
-  gap: 8px;
+  gap: 6px;
   align-items: center;
-  padding: 12px 16px;
-  border-radius: 999px;
-  background: #172033;
-  color: white;
-  font-weight: 800;
-  box-shadow: 0 18px 35px rgba(15, 23, 42, 0.24);
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.82rem;
+  font-weight: 500;
+  border: none;
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s;
+}
+
+.logout-button:hover {
+  background: rgba(255, 255, 255, 0.15);
+  color: rgba(255, 255, 255, 0.9);
 }
 
 .sidebar {
@@ -95,6 +101,8 @@ button {
   color: white;
   background: linear-gradient(180deg, #0f3f77 0%, #0f76bc 100%);
   box-shadow: 18px 0 45px rgba(15, 63, 119, 0.2);
+  display: flex;
+  flex-direction: column;
 }
 
 .brand {
@@ -164,7 +172,7 @@ button {
 
 .topbar p {
   margin: 0 0 4px;
-  color: #64748b;
+  color: #475569;
 }
 
 .topbar h1 {
@@ -205,7 +213,7 @@ button {
 
 .company-info span {
   font-size: 13px;
-  color: #64748b;
+  color: #475569;
 }
 
 .grid {
@@ -290,7 +298,7 @@ textarea:focus {
 
 input[readonly] {
   background: #f1f5f9;
-  color: #475569;
+  color: #334155;
 }
 
 textarea {
@@ -460,14 +468,14 @@ form button,
 .people-list span,
 .people-list small {
   display: block;
-  color: #64748b;
+  color: #475569;
 }
 
 .protocol-item small {
   display: inline-flex;
   gap: 4px;
   align-items: center;
-  color: #64748b;
+  color: #475569;
 }
 
 .protocol-item em {
@@ -495,7 +503,7 @@ form button,
 }
 
 .empty {
-  color: #64748b;
+  color: #475569;
   text-align: center;
 }
 
@@ -582,7 +590,7 @@ form button,
 }
 
 .recipient-list span {
-  color: #64748b;
+  color: #475569;
   font-size: 13px;
 }
 
@@ -594,7 +602,7 @@ form button,
   border: 1px dashed #94a3b8;
   border-radius: 18px;
   background: #f8fafc;
-  color: #64748b;
+  color: #475569;
 }
 
 .logo-preview img {
@@ -630,7 +638,7 @@ form button,
 }
 
 .history-list span {
-  color: #64748b;
+  color: #475569;
   font-size: 13px;
 }
 
@@ -648,7 +656,7 @@ form button,
 }
 
 .backup-box p {
-  color: #64748b;
+  color: #475569;
 }
 
 .hidden-input {
@@ -678,6 +686,38 @@ form button,
   .details-grid {
     grid-template-columns: 1fr;
   }
+}
+
+.permissions-section {
+  margin: 0.5rem 0 1rem;
+  padding: 1rem;
+  background: #f0f4ff;
+  border-radius: 10px;
+  border: 1px solid #d7deea;
+}
+
+.permissions-section h3 {
+  margin: 0 0 0.75rem;
+  font-size: 0.95rem;
+  color: #0f76bc;
+}
+
+.checkbox-label {
+  display: flex !important;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 500;
+  cursor: pointer;
+  padding: 0.35rem 0;
+  font-size: 0.92rem;
+}
+
+.checkbox-label input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  accent-color: #0f76bc;
+  cursor: pointer;
+  flex-shrink: 0;
 }
 
 @media (max-width: 720px) {
