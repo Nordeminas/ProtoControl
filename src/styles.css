@@ -390,15 +390,23 @@ form button,
   padding: 10px 14px !important;
 }
 
-.filter-counter {
+.filter-toggle {
   display: inline-flex;
   align-items: center;
+  gap: 4px;
   padding: 0 14px;
   border: 1px solid #d7e2f0;
   border-radius: 14px;
   background: #f8fafc;
   color: #36506f;
-  font-weight: 800;
+  font-weight: 600;
+  font-size: 0.88rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.filter-toggle:hover {
+  background: #eaf2fb;
 }
 
 .filters-grid,

@@ -451,6 +451,7 @@ function ProtocolsView({ protocols, allProtocols, clients, employees, currentUse
   const [whatsAppProtocol, setWhatsAppProtocol] = useState(null);
   const [detailsProtocol, setDetailsProtocol] = useState(null);
   const [showProtocolModal, setShowProtocolModal] = useState(false);
+  const [showFilters, setShowFilters] = useState(false);
 
   const selectedClient = clients.find((client) => client.id === form.clientId);
   const activeFilters = Object.values(filters).filter(Boolean).length;
@@ -568,8 +569,9 @@ function ProtocolsView({ protocols, allProtocols, clients, employees, currentUse
         </div>
         <div className="compact-search-row">
           <div className="search-box"><Search size={18} /><input placeholder="Buscar por número, cliente, funcionário ou situação" value={search} onChange={(event) => setSearch(event.target.value)} /></div>
-          <span className="filter-counter">Filtros {activeFilters ? `(${activeFilters})` : ''}</span>
+          <button className="ghost filter-toggle" type="button" onClick={() => setShowFilters(!showFilters)}>Filtros {activeFilters ? '(' + activeFilters + ')' : ''}</button>
         </div>
+        {showFilters && (
         <div className="filters-grid">
           <select value={filters.clientId} onChange={(event) => setFilters({ ...filters, clientId: event.target.value })}><option value="">Todos os clientes</option>{clients.map((client) => <option key={client.id} value={client.id}>{client.name}</option>)}</select>
           <select value={filters.employeeId} onChange={(event) => setFilters({ ...filters, employeeId: event.target.value })}><option value="">Todos os funcionários</option>{employees.map((employee) => <option key={employee.id} value={employee.id}>{employee.name}</option>)}</select>
@@ -579,6 +581,7 @@ function ProtocolsView({ protocols, allProtocols, clients, employees, currentUse
           <input type="date" value={filters.endDate} onChange={(event) => setFilters({ ...filters, endDate: event.target.value })} />
           <button className="ghost" type="button" onClick={() => setFilters(emptyFilters)}>Limpar filtros</button>
         </div>
+        )}
         <div className="protocol-list">
           {protocols.map((protocol) => <ProtocolItem key={protocol.id} protocol={protocol} company={company} onWhatsApp={() => setWhatsAppProtocol(protocol)} onDetails={() => setDetailsProtocol(protocol)} />)}
           {!protocols.length && <p className="empty">Nenhum protocolo cadastrado ainda.</p>}
