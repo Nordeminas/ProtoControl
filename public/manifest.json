@@ -1,0 +1,21 @@
+{
+  "name": "ProtoControl",
+  "short_name": "ProtoControl",
+  "description": "Sistema de controle de protocolos para escritório de contabilidade",
+  "start_url": "/",
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
+  "orientation": "any",
+  "background_color": "#0f3f77",
+  "theme_color": "#0f3f77",
+  "lang": "pt-BR",
+  "categories": ["business", "productivity"],
+  "icons": [
+    {
+      "src": "/icon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
