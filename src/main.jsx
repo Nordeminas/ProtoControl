@@ -31,6 +31,13 @@ const STATUS_OPTIONS = [
   'Cancelado',
 ];
 
+const DEFAULT_PERMISSIONS = {
+  canAccessProtocols: true,
+  canAccessClients: true,
+  canAccessEmployees: false,
+  canAccessSettings: false,
+};
+
 const emptyFilters = {
   clientId: '',
   employeeId: '',
