@@ -10,6 +10,7 @@ const STORAGE_KEYS = {
   employees: 'protocontrol_employees',
   company: 'protocontrol_company',
   session: 'protocontrol_session',
+  auditLogs: 'protocontrol_audit_logs',
 };
 
 const ADMIN_USER = {
@@ -36,6 +37,7 @@ const DEFAULT_PERMISSIONS = {
   canAccessClients: true,
   canAccessEmployees: false,
   canAccessSettings: false,
+  canAccessHistory: false,
 };
 
 const emptyFilters = {
@@ -237,12 +239,14 @@ function App() {
   });
   const [company, setCompany] = useState(() => loadStorage(STORAGE_KEYS.company, emptyCompany));
   const [currentUser, setCurrentUser] = useState(() => loadStorage(STORAGE_KEYS.session, null));
+  const [auditLogs, setAuditLogs] = useState(() => loadStorage(STORAGE_KEYS.auditLogs, []));
   const [createdProtocol, setCreatedProtocol] = useState(null);
   const [search, setSearch] = useState('');
   const [filters, setFilters] = useState(emptyFilters);
 
   const authenticatedUser = employees.find((employee) => employee.id === currentUser?.id && employee.role === currentUser?.role) || null;
   const isAdmin = authenticatedUser?.role === 'admin';
+  const canAccessHistory = isAdmin || authenticatedUser?.permissions?.canAccessHistory;
 
   useEffect(() => {
     let active = true;
@@ -331,6 +335,23 @@ function App() {
     persistCompany(data.company || emptyCompany);
   };
 
+  const addAuditLog = (action, entityType, entityId, entityName, details = '') => {
+    const entry = {
+      id: generateId(),
+      timestamp: new Date().toISOString(),
+      userId: authenticatedUser.id,
+      userName: authenticatedUser.name,
+      action,
+      entityType,
+      entityId,
+      entityName,
+      details,
+    };
+    const next = [entry, ...auditLogs].slice(0, 1000);
+    setAuditLogs(next);
+    saveData('auditLogs', next);
+  };
+
   return (
     <div className="app-shell">
       <aside className="sidebar">
@@ -345,6 +366,7 @@ function App() {
           <button className={activeTab === 'protocols' ? 'active' : ''} onClick={() => setActiveTab('protocols')}><FileText size={18} /> Protocolos</button>
           <button className={activeTab === 'clients' ? 'active' : ''} onClick={() => setActiveTab('clients')}><Users size={18} /> Clientes</button>
           {isAdmin && <button className={activeTab === 'employees' ? 'active' : ''} onClick={() => setActiveTab('employees')}><UserRoundPlus size={18} /> Funcionários</button>}
+          {canAccessHistory && <button className={activeTab === 'history' ? 'active' : ''} onClick={() => setActiveTab('history')}><History size={18} /> Histórico</button>}
           {isAdmin && <button className={activeTab === 'settings' ? 'active' : ''} onClick={() => setActiveTab('settings')}><Settings size={18} /> Configurações</button>}
         </nav>
         <button className="logout-button" onClick={() => {
@@ -358,7 +380,7 @@ function App() {
         <header className="topbar">
           <div>
             <p>Aplicativo para escritório de contabilidade</p>
-            <h1>{activeTab === 'protocols' ? 'Protocolos' : activeTab === 'clients' ? 'Clientes' : activeTab === 'employees' ? 'Funcionários' : 'Configurações da Empresa'}</h1>
+            <h1>{activeTab === 'protocols' ? 'Protocolos' : activeTab === 'clients' ? 'Clientes' : activeTab === 'employees' ? 'Funcionários' : activeTab === 'history' ? 'Histórico de Modificações' : 'Configurações da Empresa'}</h1>
           </div>
           <div className="company-pill">
             {company.logo ? <img src={company.logo} alt={company.tradeName || 'Logo da empresa'} /> : <Building2 size={48} />}
@@ -387,17 +409,30 @@ function App() {
               const next = [protocol, ...protocols];
               persistProtocols(next);
               setCreatedProtocol(protocol);
+              addAuditLog('Criação', 'Protocolo', protocol.id, protocol.number, `Protocolo criado para ${protocol.clientName}`);
             }}
-            onUpdateProtocol={(updated) => persistProtocols(protocols.map((protocol) => protocol.id === updated.id ? updated : protocol))}
-            onDeleteProtocol={(id) => persistProtocols(protocols.filter((protocol) => protocol.id !== id))}
-            onSaveClient={(client) => persistClients([client, ...clients])}
+            onUpdateProtocol={(updated) => {
+              persistProtocols(protocols.map((protocol) => protocol.id === updated.id ? updated : protocol));
+              addAuditLog('Edição', 'Protocolo', updated.id, updated.number, 'Detalhes do protocolo atualizados');
+            }}
+            onDeleteProtocol={(id) => {
+              const p = protocols.find(p => p.id === id);
+              persistProtocols(protocols.filter((protocol) => protocol.id !== id));
+              if (p) addAuditLog('Exclusão', 'Protocolo', id, p.number, 'Protocolo excluído');
+            }}
+            onSaveClient={(client) => {
+              persistClients([client, ...clients]);
+              addAuditLog('Criação', 'Cliente', client.id, client.name, 'Novo cliente cadastrado via protocolo');
+            }}
             createdProtocol={createdProtocol}
             setCreatedProtocol={setCreatedProtocol}
           />
         )}
-        {activeTab === 'clients' && <PeopleManager title="Clientes" type="cliente" people={clients} onSave={persistClients} protocols={protocols} />}
-        {activeTab === 'employees' && isAdmin && <PeopleManager title="Funcionários" type="funcionário" people={employees} onSave={persistEmployees} includePassword />}
+        {activeTab === 'clients' && <PeopleManager title="Clientes" type="cliente" people={clients} onSave={persistClients} protocols={protocols} onLog={addAuditLog} />}
+        {activeTab === 'employees' && isAdmin && <PeopleManager title="Funcionários" type="funcionário" people={employees} onSave={persistEmployees} includePassword onLog={addAuditLog} />}
         {activeTab === 'employees' && !isAdmin && <AccessDenied title="Cadastro de funcionários" message="Somente o usuário administrativo pode gerenciar funcionários." />}
+        {activeTab === 'history' && canAccessHistory && <HistoryView logs={auditLogs} />}
+        {activeTab === 'history' && !canAccessHistory && <AccessDenied title="Histórico de Modificações" message="Você não possui permissão para visualizar o histórico do sistema." />}
         {activeTab === 'settings' && isAdmin && <SettingsView company={company} protocols={protocols} clients={clients} employees={employees} onSave={persistCompany} onRestoreBackup={restoreBackup} />}
         {activeTab === 'settings' && !isAdmin && <AccessDenied title="Configurações da empresa" message="Somente o usuário administrativo pode editar os dados da empresa." />}
       </main>
@@ -789,7 +824,7 @@ function WhatsAppRecipientModal({ protocol, company, clients, employees, onClose
   );
 }
 
-function PeopleManager({ title, type, people, onSave, protocols = [], includePassword = false }) {
+function PeopleManager({ title, type, people, onSave, protocols = [], includePassword = false, onLog }) {
   const [person, setPerson] = useState(includePassword ? emptyPerson : emptyClient);
   const [editingId, setEditingId] = useState(null);
   const [historyPerson, setHistoryPerson] = useState(null);
@@ -824,7 +859,9 @@ function PeopleManager({ title, type, people, onSave, protocols = [], includePas
 
   const handleDelete = () => {
     if (confirm('Excluir este ' + type + ' permanentemente?')) {
+      const existing = people.find((item) => item.id === editingId);
       onSave(people.filter((item) => item.id !== editingId));
+      if (onLog && existing) onLog('Exclusão', includePassword ? 'Funcionário' : 'Cliente', existing.id, existing.name, `${includePassword ? 'Funcionário' : 'Cliente'} excluído`);
       closeModal();
     }
   };
@@ -846,6 +883,7 @@ function PeopleManager({ title, type, people, onSave, protocols = [], includePas
       ...(includePassword ? { role: existing?.role || 'employee', username: normalizeUsername(person.username || person.name), permissions: person.permissions || DEFAULT_PERMISSIONS } : {}),
     };
     onSave(editingId ? people.map((item) => item.id === editingId ? record : item) : [record, ...people]);
+    if (onLog) onLog(editingId ? 'Edição' : 'Criação', includePassword ? 'Funcionário' : 'Cliente', record.id, record.name, editingId ? 'Dados atualizados' : `Novo ${type} cadastrado`);
     closeModal();
   };
 
@@ -889,6 +927,10 @@ function PeopleManager({ title, type, people, onSave, protocols = [], includePas
                   <label className="checkbox-label">
                     <input type="checkbox" checked={person.permissions?.canAccessSettings ?? false} onChange={(e) => setPerson({ ...person, permissions: { ...person.permissions, canAccessSettings: e.target.checked } })} />
                     Configuracoes da empresa
+                  </label>
+                  <label className="checkbox-label">
+                    <input type="checkbox" checked={person.permissions?.canAccessHistory ?? false} onChange={(e) => setPerson({ ...person, permissions: { ...person.permissions, canAccessHistory: e.target.checked } })} />
+                    Histórico de modificações
                   </label>
                 </div>
               )}
@@ -1035,6 +1077,31 @@ ${company.tradeName || ''}`);
 function buildProtocolHtml(protocol, company) {
   const e = escapeHtml;
   return `<!doctype html><html><head><meta charset="utf-8"><title>Protocolo ${e(protocol.number)}</title><style>body{font-family:Arial,sans-serif;color:#172033;margin:40px}.sheet{border:1px solid #d7deea;border-radius:16px;padding:32px}.header{display:flex;gap:20px;align-items:center;border-bottom:2px solid #0f76bc;padding-bottom:20px;margin-bottom:26px}.logo{width:110px;height:80px;object-fit:contain}.placeholder{width:110px;height:80px;border:1px dashed #9aa8bc;display:flex;align-items:center;justify-content:center;color:#7b8798}.company h1{margin:0;font-size:24px}.company p{margin:4px 0;color:#5d6b82}.title{text-align:center;background:#eef7ff;border-radius:12px;padding:14px;font-size:24px;letter-spacing:2px}.grid{display:grid;grid-template-columns:190px 1fr;border:1px solid #d7deea;margin-top:20px}.label{background:#0f76bc;color:white;font-weight:bold;text-align:right;padding:13px;border-bottom:1px solid #d7deea}.value{padding:13px;border-bottom:1px solid #d7deea}.notes{min-height:90px}.signature{display:flex;justify-content:space-between;margin-top:60px;gap:40px}.signature div{flex:1;text-align:center;border-top:1px solid #172033;padding-top:10px}@media print{button{display:none}body{margin:20px}}</style></head><body><div class="sheet"><div class="header">${company.logo ? `<img class="logo" src="${company.logo}">` : '<div class="placeholder">Logo</div>'}<div class="company"><h1>${e(company.tradeName) || 'Empresa'}</h1><p>${e(company.legalName)}</p><p>CNPJ: ${e(company.cnpj) || '-'} · Tel.: ${e(company.phone) || '-'}</p><p>${e(company.address)}</p></div></div><div class="title">PROTOCOLO Nº ${e(protocol.number)}</div><div class="grid"><div class="label">CRIADO POR</div><div class="value">${e(protocol.employeeName)}</div><div class="label">DATA</div><div class="value">${e(formatDate(protocol.date))}</div><div class="label">DESTINATÁRIO</div><div class="value">${e(protocol.clientName)}</div><div class="label">SITUAÇÃO</div><div class="value">${e(protocol.status)}</div><div class="label">ENTREGUE</div><div class="value">${e(protocol.deliveredTo) || '-'}</div><div class="label">OBSERVAÇÕES</div><div class="value notes">${e(protocol.notes) || '-'}</div></div><div class="signature"><div>Assinatura do responsável</div><div>Assinatura do destinatário</div></div></div></body></html>`;
+}
+function HistoryView({ logs }) {
+  return (
+    <section className="card wide-card">
+      <div className="section-title">
+        <div><span>Consulta</span><h2>Histórico de Modificações do Sistema</h2></div>
+      </div>
+      <div className="history-logs-list" style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+        {logs.map((log) => (
+          <article key={log.id} style={{ display: 'flex', gap: '1rem', padding: '1rem', background: 'var(--color-bg, #ffffff)', border: '1px solid var(--color-border, #d7deea)', borderRadius: '12px' }}>
+            <div style={{ flex: '0 0 160px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              <strong style={{ fontSize: '0.85rem', color: 'var(--color-primary, #0f76bc)' }}>{formatDateTime(log.timestamp)}</strong>
+              <span style={{ fontSize: '0.85rem', color: 'var(--color-text-light, #5d6b82)' }}>{log.userName}</span>
+            </div>
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              <strong style={{ fontSize: '0.95rem' }}>{log.action} - {log.entityType}</strong>
+              <span style={{ fontSize: '0.9rem', color: 'var(--color-text-main, #172033)' }}>{log.entityName}</span>
+              {log.details && <span style={{ fontSize: '0.85rem', color: 'var(--color-text-light, #5d6b82)' }}>{log.details}</span>}
+            </div>
+          </article>
+        ))}
+        {!logs.length && <p className="empty">Nenhum registro de auditoria encontrado.</p>}
+      </div>
+    </section>
+  );
 }
 
 createRoot(document.getElementById('root')).render(<App />);
