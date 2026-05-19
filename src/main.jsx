@@ -634,7 +634,7 @@ function ProtocolsView({ protocols, allProtocols, clients, employees, currentUse
       {whatsAppProtocol && <WhatsAppRecipientModal protocol={whatsAppProtocol} company={company} clients={clients} employees={employees} onClose={() => setWhatsAppProtocol(null)} />}
       {detailsProtocol && <ProtocolDetailsModal protocol={detailsProtocol} currentUser={currentUser} onClose={() => setDetailsProtocol(null)} onSave={(updated) => { onUpdateProtocol(updated); setDetailsProtocol(updated); }} onDelete={onDeleteProtocol} />}
       {showProtocolModal && (
-        <div className="modal-backdrop">
+        <div className="modal-backdrop" onClick={(e) => { if (e.target === e.currentTarget) closeProtocolModal(); }}>
           <div className="modal large-modal protocol-modal">
             <div className="section-title">
               <div><span>Novo registro</span><h2>Dados do protocolo</h2></div>
@@ -748,7 +748,7 @@ function ProtocolDetailsModal({ protocol, currentUser, onClose, onSave, onDelete
   };
 
   return (
-    <div className="modal-backdrop">
+    <div className="modal-backdrop" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="modal large-modal">
         <History className="whatsapp-icon" size={52} />
         <h2>Detalhes do protocolo {protocol.number}</h2>
@@ -898,7 +898,7 @@ function PeopleManager({ title, type, people, onSave, protocols = [], includePas
         {!people.length && <p className="empty">Nenhum cadastro encontrado.</p>}
       </div>
       {showModal && (
-        <div className="modal-backdrop">
+        <div className="modal-backdrop" onClick={(e) => { if (e.target === e.currentTarget) closeModal(); }}>
           <div className="modal large-modal">
             <div className="section-title"><div><span>{editingId ? 'Edição' : 'Cadastro'}</span><h2>{editingId ? 'Editar ' + type : 'Novo ' + type}</h2></div></div>
             <form onSubmit={submit}>
@@ -956,7 +956,7 @@ function PeopleManager({ title, type, people, onSave, protocols = [], includePas
 
 function ClientHistoryModal({ client, protocols, onClose }) {
   return (
-    <div className="modal-backdrop">
+    <div className="modal-backdrop" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="modal large-modal">
         <Users className="whatsapp-icon" size={52} />
         <h2>Histórico de {client.name}</h2>
