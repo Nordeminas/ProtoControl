@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { Building2, CheckCircle2, Clock, Download, FileDown, FileText, History, Lock, LogOut, MessageCircle, Paperclip, Plus, Printer, Search, Settings, Upload, Users, UserRoundPlus } from 'lucide-react';
-import { loadAllAppData, saveAppData } from './supabaseClient';
+import { Building2, CheckCircle2, Clock, DollarSign, Download, FileDown, FileText, History, Lock, LogOut, MessageCircle, Paperclip, Plus, Printer, Search, Settings, Trash2, Upload, Users, UserRoundPlus } from 'lucide-react';
+import { loadAllAppData, saveRow, deleteRow } from './supabaseClient';
 import './styles.css';
 
 const STORAGE_KEYS = {
@@ -11,6 +11,8 @@ const STORAGE_KEYS = {
   company: 'protocontrol_company',
   session: 'protocontrol_session',
   auditLogs: 'protocontrol_audit_logs',
+  fees: 'protocontrol_fees',
+  feeCategories: 'protocontrol_fee_categories',
 };
 
 const ADMIN_USER = {
@@ -35,6 +37,7 @@ const STATUS_OPTIONS = [
 const DEFAULT_PERMISSIONS = {
   canAccessProtocols: true,
   canAccessClients: true,
+  canAccessFees: false,
   canAccessEmployees: false,
   canAccessSettings: false,
   canAccessHistory: false,
@@ -124,9 +127,8 @@ function saveStorage(key, value) {
   }
 }
 
-function saveData(key, value) {
+function saveDataLocal(key, value) {
   saveStorage(STORAGE_KEYS[key], value);
-  saveAppData(key, value).catch((error) => console.error(`Erro ao salvar ${key} no Supabase:`, error));
 }
 
 function todayInput() {
@@ -240,6 +242,8 @@ function App() {
   const [company, setCompany] = useState(() => loadStorage(STORAGE_KEYS.company, emptyCompany));
   const [currentUser, setCurrentUser] = useState(() => loadStorage(STORAGE_KEYS.session, null));
   const [auditLogs, setAuditLogs] = useState(() => loadStorage(STORAGE_KEYS.auditLogs, []));
+  const [fees, setFees] = useState(() => loadStorage(STORAGE_KEYS.fees, []));
+  const [feeCategories, setFeeCategories] = useState(() => loadStorage(STORAGE_KEYS.feeCategories, []));
   const [createdProtocol, setCreatedProtocol] = useState(null);
   const [search, setSearch] = useState('');
   const [filters, setFilters] = useState(emptyFilters);
@@ -247,6 +251,7 @@ function App() {
   const authenticatedUser = employees.find((employee) => employee.id === currentUser?.id && employee.role === currentUser?.role) || null;
   const isAdmin = authenticatedUser?.role === 'admin';
   const canAccessHistory = isAdmin || authenticatedUser?.permissions?.canAccessHistory;
+  const canAccessFees = isAdmin || authenticatedUser?.permissions?.canAccessFees;
 
   useEffect(() => {
     let active = true;
@@ -273,6 +278,14 @@ function App() {
       if (hasData(remote.company)) {
         setCompany(remote.company);
         saveStorage(STORAGE_KEYS.company, remote.company);
+      }
+      if (hasData(remote.fees)) {
+        setFees(remote.fees);
+        saveStorage(STORAGE_KEYS.fees, remote.fees);
+      }
+      if (hasData(remote.feeCategories)) {
+        setFeeCategories(remote.feeCategories);
+        saveStorage(STORAGE_KEYS.feeCategories, remote.feeCategories);
       }
     }
 
@@ -306,33 +319,129 @@ function App() {
     }} />;
   }
 
-  const persistProtocols = (value) => {
-    setProtocols(value);
-    saveData('protocols', value);
+  // --- Row-level persist helpers ---
+
+  const persistProtocol = (protocol) => {
+    setProtocols((prev) => {
+      const exists = prev.some((p) => p.id === protocol.id);
+      const next = exists ? prev.map((p) => p.id === protocol.id ? protocol : p) : [protocol, ...prev];
+      saveDataLocal('protocols', next);
+      return next;
+    });
+    saveRow('protocols', protocol).catch((err) => console.error('Erro ao salvar protocolo:', err));
   };
 
-  const persistClients = (value) => {
-    setClients(value);
-    saveData('clients', value);
+  const removeProtocol = (id) => {
+    setProtocols((prev) => {
+      const next = prev.filter((p) => p.id !== id);
+      saveDataLocal('protocols', next);
+      return next;
+    });
+    deleteRow('protocols', id).catch((err) => console.error('Erro ao excluir protocolo:', err));
   };
 
-  const persistEmployees = (value) => {
-    const nextEmployees = ensureAdminEmployee(value);
-    setEmployees(nextEmployees);
-    saveData('employees', nextEmployees);
+  const persistClient = (client) => {
+    setClients((prev) => {
+      const exists = prev.some((c) => c.id === client.id);
+      const next = exists ? prev.map((c) => c.id === client.id ? client : c) : [client, ...prev];
+      saveDataLocal('clients', next);
+      return next;
+    });
+    saveRow('clients', client).catch((err) => console.error('Erro ao salvar cliente:', err));
+  };
+
+  const removeClient = (id) => {
+    setClients((prev) => {
+      const next = prev.filter((c) => c.id !== id);
+      saveDataLocal('clients', next);
+      return next;
+    });
+    deleteRow('clients', id).catch((err) => console.error('Erro ao excluir cliente:', err));
+  };
+
+  const persistEmployee = (employee) => {
+    setEmployees((prev) => {
+      const exists = prev.some((e) => e.id === employee.id);
+      const raw = exists ? prev.map((e) => e.id === employee.id ? employee : e) : [employee, ...prev];
+      const next = ensureAdminEmployee(raw);
+      saveDataLocal('employees', next);
+      return next;
+    });
+    saveRow('employees', employee).catch((err) => console.error('Erro ao salvar funcionário:', err));
+  };
+
+  const removeEmployee = (id) => {
+    setEmployees((prev) => {
+      const next = ensureAdminEmployee(prev.filter((e) => e.id !== id));
+      saveDataLocal('employees', next);
+      return next;
+    });
+    deleteRow('employees', id).catch((err) => console.error('Erro ao excluir funcionário:', err));
   };
 
   const persistCompany = (value) => {
     setCompany(value);
-    saveData('company', value);
+    saveDataLocal('company', value);
+    saveRow('company', { ...value, id: 'main' }).catch((err) => console.error('Erro ao salvar empresa:', err));
+  };
+
+  const persistFee = (fee) => {
+    setFees((prev) => {
+      const exists = prev.some((f) => f.id === fee.id);
+      const next = exists ? prev.map((f) => f.id === fee.id ? fee : f) : [fee, ...prev];
+      saveDataLocal('fees', next);
+      return next;
+    });
+    saveRow('fees', fee).catch((err) => console.error('Erro ao salvar honorário:', err));
+  };
+
+  const removeFee = (id) => {
+    setFees((prev) => {
+      const next = prev.filter((f) => f.id !== id);
+      saveDataLocal('fees', next);
+      return next;
+    });
+    deleteRow('fees', id).catch((err) => console.error('Erro ao excluir honorário:', err));
+  };
+
+  const persistFeeCategory = (category) => {
+    setFeeCategories((prev) => {
+      const exists = prev.some((c) => c.id === category.id);
+      const next = exists ? prev : [...prev, category].sort((a, b) => a.name.localeCompare(b.name));
+      saveDataLocal('feeCategories', next);
+      return next;
+    });
+    saveRow('fee_categories', category).catch((err) => console.error('Erro ao salvar categoria:', err));
+  };
+
+  const removeFeeCategory = (id) => {
+    setFeeCategories((prev) => {
+      const next = prev.filter((c) => c.id !== id);
+      saveDataLocal('feeCategories', next);
+      return next;
+    });
+    deleteRow('fee_categories', id).catch((err) => console.error('Erro ao excluir categoria:', err));
   };
 
   const restoreBackup = (data) => {
     const nextEmployees = ensureAdminEmployee(data.employees || []);
-    persistProtocols(data.protocols || []);
-    persistClients(data.clients || []);
-    persistEmployees(nextEmployees);
-    persistCompany(data.company || emptyCompany);
+    // Restore state locally
+    setProtocols(data.protocols || []);
+    setClients(data.clients || []);
+    setEmployees(nextEmployees);
+    setCompany(data.company || emptyCompany);
+    setFees(data.fees || []);
+    saveDataLocal('protocols', data.protocols || []);
+    saveDataLocal('clients', data.clients || []);
+    saveDataLocal('employees', nextEmployees);
+    saveDataLocal('company', data.company || emptyCompany);
+    saveDataLocal('fees', data.fees || []);
+    // Persist each row to Supabase
+    (data.protocols || []).forEach((p) => saveRow('protocols', p).catch(console.error));
+    (data.clients || []).forEach((c) => saveRow('clients', c).catch(console.error));
+    nextEmployees.forEach((e) => saveRow('employees', e).catch(console.error));
+    if (data.company) saveRow('company', { ...data.company, id: 'main' }).catch(console.error);
+    (data.fees || []).forEach((f) => saveRow('fees', f).catch(console.error));
   };
 
   const addAuditLog = (action, entityType, entityId, entityName, details = '') => {
@@ -347,9 +456,12 @@ function App() {
       entityName,
       details,
     };
-    const next = [entry, ...auditLogs].slice(0, 1000);
-    setAuditLogs(next);
-    saveData('auditLogs', next);
+    setAuditLogs((prev) => {
+      const next = [entry, ...prev].slice(0, 1000);
+      saveDataLocal('auditLogs', next);
+      return next;
+    });
+    saveRow('audit_logs', entry).catch((err) => console.error('Erro ao salvar log de auditoria:', err));
   };
 
   return (
@@ -365,6 +477,7 @@ function App() {
         <nav>
           <button className={activeTab === 'protocols' ? 'active' : ''} onClick={() => setActiveTab('protocols')}><FileText size={18} /> Protocolos</button>
           <button className={activeTab === 'clients' ? 'active' : ''} onClick={() => setActiveTab('clients')}><Users size={18} /> Clientes</button>
+          {canAccessFees && <button className={activeTab === 'fees' ? 'active' : ''} onClick={() => setActiveTab('fees')}><DollarSign size={18} /> Honorários</button>}
           {isAdmin && <button className={activeTab === 'employees' ? 'active' : ''} onClick={() => setActiveTab('employees')}><UserRoundPlus size={18} /> Funcionários</button>}
           {canAccessHistory && <button className={activeTab === 'history' ? 'active' : ''} onClick={() => setActiveTab('history')}><History size={18} /> Histórico</button>}
           {isAdmin && <button className={activeTab === 'settings' ? 'active' : ''} onClick={() => setActiveTab('settings')}><Settings size={18} /> Configurações</button>}
@@ -380,7 +493,7 @@ function App() {
         <header className="topbar">
           <div>
             <p>Aplicativo para escritório de contabilidade</p>
-            <h1>{activeTab === 'protocols' ? 'Protocolos' : activeTab === 'clients' ? 'Clientes' : activeTab === 'employees' ? 'Funcionários' : activeTab === 'history' ? 'Histórico de Modificações' : 'Configurações da Empresa'}</h1>
+            <h1>{activeTab === 'protocols' ? 'Protocolos' : activeTab === 'clients' ? 'Clientes' : activeTab === 'employees' ? 'Funcionários' : activeTab === 'history' ? 'Histórico de Modificações' : activeTab === 'fees' ? 'Controle de Honorários' : 'Configurações da Empresa'}</h1>
           </div>
           <div className="company-pill">
             {company.logo ? <img src={company.logo} alt={company.tradeName || 'Logo da empresa'} /> : <Building2 size={48} />}
@@ -406,34 +519,61 @@ function App() {
             filters={filters}
             setFilters={setFilters}
             onSaveProtocol={(protocol) => {
-              const next = [protocol, ...protocols];
-              persistProtocols(next);
+              persistProtocol(protocol);
               setCreatedProtocol(protocol);
               addAuditLog('Criação', 'Protocolo', protocol.id, protocol.number, `Protocolo criado para ${protocol.clientName}`);
             }}
             onUpdateProtocol={(updated) => {
-              persistProtocols(protocols.map((protocol) => protocol.id === updated.id ? updated : protocol));
+              persistProtocol(updated);
               addAuditLog('Edição', 'Protocolo', updated.id, updated.number, 'Detalhes do protocolo atualizados');
             }}
             onDeleteProtocol={(id) => {
               const p = protocols.find(p => p.id === id);
-              persistProtocols(protocols.filter((protocol) => protocol.id !== id));
+              removeProtocol(id);
               if (p) addAuditLog('Exclusão', 'Protocolo', id, p.number, 'Protocolo excluído');
             }}
             onSaveClient={(client) => {
-              persistClients([client, ...clients]);
+              persistClient(client);
               addAuditLog('Criação', 'Cliente', client.id, client.name, 'Novo cliente cadastrado via protocolo');
             }}
             createdProtocol={createdProtocol}
             setCreatedProtocol={setCreatedProtocol}
           />
         )}
-        {activeTab === 'clients' && <PeopleManager title="Clientes" type="cliente" people={clients} onSave={persistClients} protocols={protocols} onLog={addAuditLog} />}
-        {activeTab === 'employees' && isAdmin && <PeopleManager title="Funcionários" type="funcionário" people={employees} onSave={persistEmployees} includePassword onLog={addAuditLog} />}
+        {activeTab === 'clients' && <PeopleManager title="Clientes" type="cliente" people={clients} onSave={persistClient} onDelete={removeClient} protocols={protocols} onLog={addAuditLog} />}
+        {activeTab === 'employees' && isAdmin && <PeopleManager title="Funcionários" type="funcionário" people={employees} onSave={persistEmployee} onDelete={removeEmployee} includePassword onLog={addAuditLog} />}
         {activeTab === 'employees' && !isAdmin && <AccessDenied title="Cadastro de funcionários" message="Somente o usuário administrativo pode gerenciar funcionários." />}
+        {activeTab === 'fees' && canAccessFees && (
+          <FeesView
+            fees={fees}
+            clients={clients}
+            feeCategories={feeCategories}
+            currentUser={authenticatedUser}
+            onSaveFee={(fee) => {
+              persistFee(fee);
+              addAuditLog('Criação', 'Honorário', fee.id, fee.code, `Honorário ${fee.code} criado (R$ ${fee.value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}) para ${fee.clientName}`);
+            }}
+            onUpdateFee={(updated) => {
+              persistFee(updated);
+              addAuditLog('Edição', 'Honorário', updated.id, updated.code, `Honorário ${updated.code} atualizado`);
+            }}
+            onDeleteFee={(id) => {
+              const f = fees.find((fee) => fee.id === id);
+              removeFee(id);
+              if (f) addAuditLog('Exclusão', 'Honorário', id, f.code, `Honorário ${f.code} excluído`);
+            }}
+            onSaveClient={(client) => {
+              persistClient(client);
+              addAuditLog('Criação', 'Cliente', client.id, client.name, 'Novo cliente cadastrado via honorários');
+            }}
+            onSaveFeeCategory={persistFeeCategory}
+            onDeleteFeeCategory={removeFeeCategory}
+          />
+        )}
+        {activeTab === 'fees' && !canAccessFees && <AccessDenied title="Controle de Honorários" message="Você não possui permissão para acessar o controle de honorários." />}
         {activeTab === 'history' && canAccessHistory && <HistoryView logs={auditLogs} />}
         {activeTab === 'history' && !canAccessHistory && <AccessDenied title="Histórico de Modificações" message="Você não possui permissão para visualizar o histórico do sistema." />}
-        {activeTab === 'settings' && isAdmin && <SettingsView company={company} protocols={protocols} clients={clients} employees={employees} onSave={persistCompany} onRestoreBackup={restoreBackup} />}
+        {activeTab === 'settings' && isAdmin && <SettingsView company={company} protocols={protocols} clients={clients} employees={employees} fees={fees} onSave={persistCompany} onRestoreBackup={restoreBackup} />}
         {activeTab === 'settings' && !isAdmin && <AccessDenied title="Configurações da empresa" message="Somente o usuário administrativo pode editar os dados da empresa." />}
       </main>
     </div>
@@ -824,7 +964,7 @@ function WhatsAppRecipientModal({ protocol, company, clients, employees, onClose
   );
 }
 
-function PeopleManager({ title, type, people, onSave, protocols = [], includePassword = false, onLog }) {
+function PeopleManager({ title, type, people, onSave, onDelete, protocols = [], includePassword = false, onLog }) {
   const [person, setPerson] = useState(includePassword ? emptyPerson : emptyClient);
   const [editingId, setEditingId] = useState(null);
   const [historyPerson, setHistoryPerson] = useState(null);
@@ -860,7 +1000,11 @@ function PeopleManager({ title, type, people, onSave, protocols = [], includePas
   const handleDelete = () => {
     if (confirm('Excluir este ' + type + ' permanentemente?')) {
       const existing = people.find((item) => item.id === editingId);
-      onSave(people.filter((item) => item.id !== editingId));
+      if (onDelete) {
+        onDelete(editingId);
+      } else {
+        onSave(people.filter((item) => item.id !== editingId));
+      }
       if (onLog && existing) onLog('Exclusão', includePassword ? 'Funcionário' : 'Cliente', existing.id, existing.name, `${includePassword ? 'Funcionário' : 'Cliente'} excluído`);
       closeModal();
     }
@@ -882,7 +1026,7 @@ function PeopleManager({ title, type, people, onSave, protocols = [], includePas
       } : {}),
       ...(includePassword ? { role: existing?.role || 'employee', username: normalizeUsername(person.username || person.name), permissions: person.permissions || DEFAULT_PERMISSIONS } : {}),
     };
-    onSave(editingId ? people.map((item) => item.id === editingId ? record : item) : [record, ...people]);
+    onSave(record, editingId ? 'edit' : 'create');
     if (onLog) onLog(editingId ? 'Edição' : 'Criação', includePassword ? 'Funcionário' : 'Cliente', record.id, record.name, editingId ? 'Dados atualizados' : `Novo ${type} cadastrado`);
     closeModal();
   };
@@ -919,6 +1063,10 @@ function PeopleManager({ title, type, people, onSave, protocols = [], includePas
                   <label className="checkbox-label">
                     <input type="checkbox" checked={person.permissions?.canAccessClients ?? true} onChange={(e) => setPerson({ ...person, permissions: { ...person.permissions, canAccessClients: e.target.checked } })} />
                     Cadastro de clientes
+                  </label>
+                  <label className="checkbox-label">
+                    <input type="checkbox" checked={person.permissions?.canAccessFees ?? false} onChange={(e) => setPerson({ ...person, permissions: { ...person.permissions, canAccessFees: e.target.checked } })} />
+                    Controle de honorários
                   </label>
                   <label className="checkbox-label">
                     <input type="checkbox" checked={person.permissions?.canAccessEmployees ?? false} onChange={(e) => setPerson({ ...person, permissions: { ...person.permissions, canAccessEmployees: e.target.checked } })} />
@@ -970,7 +1118,7 @@ function ClientHistoryModal({ client, protocols, onClose }) {
   );
 }
 
-function SettingsView({ company, protocols, clients, employees, onSave, onRestoreBackup }) {
+function SettingsView({ company, protocols, clients, employees, fees = [], onSave, onRestoreBackup }) {
   const [form, setForm] = useState(company);
   const fileInputRef = useRef(null);
 
@@ -991,7 +1139,7 @@ function SettingsView({ company, protocols, clients, employees, onSave, onRestor
   };
 
   const exportBackup = () => {
-    downloadFile(`backup-protocontrol-${todayInput()}.json`, JSON.stringify({ protocols, clients, employees, company: form }, null, 2), 'application/json;charset=utf-8');
+    downloadFile(`backup-protocontrol-${todayInput()}.json`, JSON.stringify({ protocols, clients, employees, fees, company: form }, null, 2), 'application/json;charset=utf-8');
   };
 
   const importBackup = (file) => {
@@ -1012,6 +1160,7 @@ function SettingsView({ company, protocols, clients, employees, onSave, onRestor
           alert('O arquivo de backup está incompleto ou inválido.');
           return;
         }
+        data.fees = data.fees || [];
         onRestoreBackup(data);
       } catch {
         alert('Não foi possível importar o backup. Verifique se o arquivo JSON é válido.');
@@ -1101,6 +1250,584 @@ function HistoryView({ logs }) {
         {!logs.length && <p className="empty">Nenhum registro de auditoria encontrado.</p>}
       </div>
     </section>
+  );
+}
+
+function generateFeeCode(feesList) {
+  const year = new Date().getFullYear();
+  const count = feesList.filter((fee) => String(fee.code).includes(`/${year}`)).length + 1;
+  return `H-${String(count).padStart(5, '0')}/${year}`;
+}
+
+function isFeeOverdue(fee) {
+  return fee.dueDate && fee.status === 'Pendente' && fee.dueDate < todayInput();
+}
+
+function getFeeStatus(fee) {
+  if (fee.status === 'Pago') return 'Pago';
+  if (isFeeOverdue(fee)) return 'Atrasado';
+  return 'Pendente';
+}
+
+function FeesView({ fees, clients, feeCategories = [], currentUser, onSaveFee, onUpdateFee, onDeleteFee, onSaveClient, onSaveFeeCategory, onDeleteFeeCategory }) {
+  const [search, setSearch] = useState('');
+  const [filterClient, setFilterClient] = useState('');
+  const [filterStatus, setFilterStatus] = useState('');
+  const [reportType, setReportType] = useState('mensal'); // 'mensal' | 'anual'
+  const [reportYear, setReportYear] = useState(() => String(new Date().getFullYear()));
+  const [reportMonth, setReportMonth] = useState(() => String(new Date().getMonth() + 1).padStart(2, '0'));
+  
+  const [showModal, setShowModal] = useState(false);
+  const [editingFee, setEditingFee] = useState(null);
+
+  const openAdd = () => {
+    setEditingFee(null);
+    setShowModal(true);
+  };
+
+  const openEdit = (fee) => {
+    setEditingFee(fee);
+    setShowModal(true);
+  };
+
+  const closeModal = () => {
+    setShowModal(false);
+    setEditingFee(null);
+  };
+
+  // Filter fees list
+  const filteredFees = useMemo(() => {
+    const term = search.toLowerCase();
+    return fees.filter((fee) => {
+      const status = getFeeStatus(fee);
+      const matchesSearch = [fee.code, fee.clientName, fee.category, status].some((item) => item?.toLowerCase().includes(term));
+      const matchesClient = !filterClient || fee.clientId === filterClient;
+      const matchesStatus = !filterStatus || status === filterStatus;
+      return matchesSearch && matchesClient && matchesStatus;
+    });
+  }, [fees, search, filterClient, filterStatus]);
+
+  // Statistics calculation
+  const stats = useMemo(() => {
+    let paid = 0;
+    let pending = 0;
+    let overdue = 0;
+
+    fees.forEach((fee) => {
+      const status = getFeeStatus(fee);
+      if (status === 'Pago') {
+        paid += fee.value;
+      } else if (status === 'Atrasado') {
+        overdue += fee.value;
+      } else {
+        pending += fee.value;
+      }
+    });
+
+    return { paid, pending, overdue, total: paid + pending + overdue };
+  }, [fees]);
+
+  // Report calculations based on filter year/month
+  const reportData = useMemo(() => {
+    let filteredForReport = fees;
+    
+    if (reportType === 'mensal') {
+      const prefix = `${reportYear}-${reportMonth}`;
+      filteredForReport = fees.filter((fee) => fee.issueDate && fee.issueDate.startsWith(prefix));
+    } else {
+      filteredForReport = fees.filter((fee) => fee.issueDate && fee.issueDate.startsWith(reportYear));
+    }
+
+    let paid = 0;
+    let pending = 0;
+    let overdue = 0;
+    const categoryTotals = {};
+    const monthlyTotals = {}; // only used in annual view
+
+    filteredForReport.forEach((fee) => {
+      const status = getFeeStatus(fee);
+      const val = fee.value || 0;
+      
+      if (status === 'Pago') paid += val;
+      else if (status === 'Atrasado') overdue += val;
+      else pending += val;
+
+      // Category breakdown
+      const cat = fee.category || 'Outros';
+      categoryTotals[cat] = (categoryTotals[cat] || 0) + val;
+
+      // Monthly breakdown for annual report
+      if (reportType === 'anual' && fee.issueDate) {
+        const monthNum = fee.issueDate.split('-')[1]; // e.g. "06"
+        monthlyTotals[monthNum] = (monthlyTotals[monthNum] || 0) + val;
+      }
+    });
+
+    const total = paid + pending + overdue;
+
+    return {
+      paid,
+      pending,
+      overdue,
+      total,
+      categories: Object.entries(categoryTotals).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value),
+      months: Object.entries(monthlyTotals).map(([num, value]) => {
+        const date = new Date(Number(reportYear), Number(num) - 1, 1);
+        const name = date.toLocaleDateString('pt-BR', { month: 'long' });
+        return { name: titleCase(name), value };
+      }).sort((a, b) => a.name.localeCompare(b.name))
+    };
+  }, [fees, reportType, reportYear, reportMonth]);
+
+  const formatBRL = (val) => {
+    return val.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  };
+
+  const handleSave = (feeData) => {
+    if (editingFee) {
+      onUpdateFee({ ...editingFee, ...feeData });
+    } else {
+      onSaveFee({
+        ...feeData,
+        id: generateId(),
+        code: generateFeeCode(fees),
+      });
+    }
+    closeModal();
+  };
+
+  const years = useMemo(() => {
+    const list = new Set([String(new Date().getFullYear())]);
+    fees.forEach((fee) => {
+      if (fee.issueDate) {
+        list.add(fee.issueDate.split('-')[0]);
+      }
+    });
+    return Array.from(list).sort().reverse();
+  }, [fees]);
+
+  return (
+    <div className="grid">
+      <div className="stats-grid">
+        <article className="stat-card paid">
+          <span>Recebido / Pago</span>
+          <h3>{formatBRL(stats.paid)}</h3>
+        </article>
+        <article className="stat-card pending">
+          <span>Pendente</span>
+          <h3>{formatBRL(stats.pending)}</h3>
+        </article>
+        <article className="stat-card overdue">
+          <span>Atrasado</span>
+          <h3>{formatBRL(stats.overdue)}</h3>
+        </article>
+      </div>
+
+      <section className="card wide-card">
+        <div className="section-title">
+          <div><span>Consulta</span><h2>Honorários Lançados</h2></div>
+          <button className="primary" type="button" onClick={openAdd}><Plus size={16} /> Adicionar Honorário</button>
+        </div>
+        <div className="compact-search-row">
+          <div className="search-box">
+            <Search size={18} />
+            <input placeholder="Buscar por código, cliente, categoria ou situação..." value={search} onChange={(e) => setSearch(e.target.value)} />
+          </div>
+        </div>
+        <div className="filters-grid">
+          <select value={filterClient} onChange={(e) => setFilterClient(e.target.value)}>
+            <option value="">Todos os clientes</option>
+            {clients.map((client) => <option key={client.id} value={client.id}>{client.name}</option>)}
+          </select>
+          <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
+            <option value="">Todas as situações</option>
+            <option value="Pago">Pago</option>
+            <option value="Pendente">Pendente</option>
+            <option value="Atrasado">Atrasado</option>
+          </select>
+          <button className="ghost" type="button" onClick={() => { setFilterClient(''); setFilterStatus(''); setSearch(''); }}>Limpar Filtros</button>
+        </div>
+
+        <div className="fee-list-header">
+          <div>Código</div>
+          <div>Cliente</div>
+          <div>Categoria</div>
+          <div>Vencimento</div>
+          <div>Valor</div>
+          <div>Situação</div>
+        </div>
+
+        <div className="protocol-list" style={{ maxHeight: '420px' }}>
+          {filteredFees.map((fee) => {
+            const status = getFeeStatus(fee);
+            return (
+              <div key={fee.id} className="fee-item-row" onClick={() => openEdit(fee)} style={{ cursor: 'pointer' }}>
+                <strong>{fee.code}</strong>
+                <span>{fee.clientName}</span>
+                <span>{fee.category}</span>
+                <span>{formatDate(fee.dueDate)}</span>
+                <strong>{formatBRL(fee.value)}</strong>
+                <div>
+                  <span className={`fee-status-badge ${status.toLowerCase()}`}>{status}</span>
+                </div>
+              </div>
+            );
+          })}
+          {!filteredFees.length && <p className="empty">Nenhum honorário encontrado.</p>}
+        </div>
+      </section>
+
+      {/* Reports Section */}
+      <section className="card wide-card report-section">
+        <div className="report-controls">
+          <div>
+            <span>Demonstrativo Financeiro</span>
+            <h2 style={{ margin: '4px 0 0' }}>Relatórios Financeiros</h2>
+          </div>
+          <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+            <div className="report-toggle-group">
+              <button className={reportType === 'mensal' ? 'active' : ''} onClick={() => setReportType('mensal')}>Mensal</button>
+              <button className={reportType === 'anual' ? 'active' : ''} onClick={() => setReportType('anual')}>Anual</button>
+            </div>
+            
+            <select style={{ width: 'auto' }} value={reportYear} onChange={(e) => setReportYear(e.target.value)}>
+              {years.map((y) => <option key={y} value={y}>{y}</option>)}
+            </select>
+
+            {reportType === 'mensal' && (
+              <select style={{ width: 'auto' }} value={reportMonth} onChange={(e) => setReportMonth(e.target.value)}>
+                <option value="01">Janeiro</option>
+                <option value="02">Fevereiro</option>
+                <option value="03">Março</option>
+                <option value="04">Abril</option>
+                <option value="05">Maio</option>
+                <option value="06">Junho</option>
+                <option value="07">Julho</option>
+                <option value="08">Agosto</option>
+                <option value="09">Setembro</option>
+                <option value="10">Outubro</option>
+                <option value="11">Novembro</option>
+                <option value="12">Dezembro</option>
+              </select>
+            )}
+          </div>
+        </div>
+
+        <div className="stats-grid" style={{ marginBottom: '24px' }}>
+          <article className="stat-card paid" style={{ boxShadow: 'none' }}>
+            <span>Faturado Recebido</span>
+            <h3>{formatBRL(reportData.paid)}</h3>
+          </article>
+          <article className="stat-card pending" style={{ boxShadow: 'none' }}>
+            <span>Faturado Pendente</span>
+            <h3>{formatBRL(reportData.pending)}</h3>
+          </article>
+          <article className="stat-card overdue" style={{ boxShadow: 'none' }}>
+            <span>Faturado Atrasado</span>
+            <h3>{formatBRL(reportData.overdue)}</h3>
+          </article>
+        </div>
+
+        <div className="report-charts-grid">
+          <div className="chart-card">
+            <h4>Distribuição por Categoria</h4>
+            <div className="chart-list">
+              {reportData.categories.map((cat) => {
+                const percentage = reportData.total > 0 ? (cat.value / reportData.total) * 100 : 0;
+                return (
+                  <div key={cat.name} className="chart-row">
+                    <div className="chart-row-header">
+                      <span>{cat.name}</span>
+                      <strong>{formatBRL(cat.value)} ({percentage.toFixed(0)}%)</strong>
+                    </div>
+                    <div className="chart-bar-bg">
+                      <div className="chart-bar-fill" style={{ width: `${percentage}%` }}></div>
+                    </div>
+                  </div>
+                );
+              })}
+              {!reportData.categories.length && <p className="empty">Sem lançamentos no período.</p>}
+            </div>
+          </div>
+
+          {reportType === 'anual' && (
+            <div className="chart-card">
+              <h4>Distribuição Mensal</h4>
+              <div className="chart-list">
+                {reportData.months.map((m) => {
+                  const percentage = reportData.total > 0 ? (m.value / reportData.total) * 100 : 0;
+                  return (
+                    <div key={m.name} className="chart-row">
+                      <div className="chart-row-header">
+                        <span>{m.name}</span>
+                        <strong>{formatBRL(m.value)} ({percentage.toFixed(0)}%)</strong>
+                      </div>
+                      <div className="chart-bar-bg">
+                        <div className="chart-bar-fill" style={{ width: `${percentage}%`, background: 'linear-gradient(90deg, #10b981, #34d399)' }}></div>
+                      </div>
+                    </div>
+                  );
+                })}
+                {!reportData.months.length && <p className="empty">Sem lançamentos no período.</p>}
+              </div>
+            </div>
+          )}
+        </div>
+      </section>
+
+      {showModal && (
+        <FeeFormModal
+          fee={editingFee}
+          fees={fees}
+          clients={clients}
+          feeCategories={feeCategories}
+          currentUser={currentUser}
+          onClose={closeModal}
+          onSave={handleSave}
+          onDelete={onDeleteFee}
+          onSaveClient={onSaveClient}
+          onSaveFeeCategory={onSaveFeeCategory}
+          onDeleteFeeCategory={onDeleteFeeCategory}
+        />
+      )}
+    </div>
+  );
+}
+
+function FeeFormModal({ fee, fees, clients, feeCategories = [], currentUser, onClose, onSave, onDelete, onSaveClient, onSaveFeeCategory, onDeleteFeeCategory }) {
+  const [form, setForm] = useState(() => {
+    if (fee) {
+      return {
+        issueDate: fee.issueDate || todayInput(),
+        dueDate: fee.dueDate || todayInput(),
+        category: fee.category || '',
+        clientId: fee.clientId || '',
+        value: fee.value || 0,
+        status: fee.status || 'Pendente',
+      };
+    }
+    return {
+      issueDate: todayInput(),
+      dueDate: todayInput(),
+      category: '',
+      clientId: '',
+      value: 0,
+      status: 'Pendente',
+    };
+  });
+  const [formError, setFormError] = useState('');
+  const [quickClient, setQuickClient] = useState(false);
+  const [newClient, setNewClient] = useState(emptyClient);
+  const [quickCategory, setQuickCategory] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState('');
+  const [categoryError, setCategoryError] = useState('');
+
+  const selectedClient = clients.find((c) => c.id === form.clientId);
+  const update = (field, val) => setForm((c) => ({ ...c, [field]: val }));
+
+  const buildClient = (data) => ({
+    ...data,
+    id: generateId(),
+    name: titleCase(data.name.trim()),
+    tradeName: data.type === 'PJ' ? titleCase((data.tradeName || data.name).trim()) : '',
+    legalName: data.type === 'PJ' ? titleCase((data.legalName || data.name).trim()) : '',
+    state: 'MG',
+  });
+
+  const createClient = () => {
+    if (!newClient.name.trim()) return;
+    const client = buildClient(newClient);
+    onSaveClient(client);
+    setForm((current) => ({ ...current, clientId: client.id }));
+    setNewClient(emptyClient);
+    setQuickClient(false);
+  };
+
+  const createCategory = () => {
+    const name = newCategoryName.trim();
+    if (!name) { setCategoryError('Informe o nome da categoria.'); return; }
+    if (feeCategories.some((c) => c.name.toLowerCase() === name.toLowerCase())) {
+      setCategoryError('Esta categoria já existe.');
+      return;
+    }
+    const category = { id: generateId(), name };
+    if (onSaveFeeCategory) onSaveFeeCategory(category);
+    setForm((current) => ({ ...current, category: name }));
+    setNewCategoryName('');
+    setCategoryError('');
+    setQuickCategory(false);
+  };
+
+  const submit = (e) => {
+    e.preventDefault();
+    let clientId = form.clientId;
+    let client = selectedClient;
+
+    if (!clientId && quickClient && newClient.name.trim()) {
+      client = buildClient(newClient);
+      clientId = client.id;
+      onSaveClient(client);
+    }
+
+    if (!clientId) {
+      setFormError('Selecione um cliente ou cadastre um novo antes de salvar.');
+      return;
+    }
+
+    if (!form.category) {
+      setFormError('Selecione uma categoria.');
+      return;
+    }
+
+    if (form.value <= 0) {
+      setFormError('Informe um valor maior que R$ 0,00.');
+      return;
+    }
+
+    setFormError('');
+    onSave({
+      ...form,
+      clientId,
+      clientName: client?.name || '',
+      value: Number(form.value),
+    });
+  };
+
+  return (
+    <div className="modal-backdrop" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="modal large-modal">
+        <div className="section-title">
+          <div>
+            <span>{fee ? 'Edição' : 'Novo Lançamento'}</span>
+            <h2>Honorário {fee ? fee.code : ''}</h2>
+          </div>
+          {!fee && <strong className="protocol-number">{generateFeeCode(fees)}</strong>}
+        </div>
+
+        <form onSubmit={submit}>
+          <div className="field-row">
+            <label>Data de Emissão
+              <input type="date" value={form.issueDate} onChange={(e) => update('issueDate', e.target.value)} required />
+            </label>
+            <label>Data de Vencimento
+              <input type="date" value={form.dueDate} onChange={(e) => update('dueDate', e.target.value)} required />
+            </label>
+          </div>
+
+          <label>Cliente
+            <div className="inline-action">
+              <select value={form.clientId} onChange={(e) => { update('clientId', e.target.value); setFormError(''); }}>
+                <option value="">Selecione o cliente</option>
+                {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+              <button type="button" className="ghost" onClick={() => setQuickClient(!quickClient)}><Plus size={16} /> Cliente</button>
+            </div>
+          </label>
+
+          {quickClient && (
+            <div className="quick-box">
+              <select value={newClient.type} onChange={(event) => setNewClient(resetClientForType(event.target.value))}>
+                <option value="PF">Pessoa Física</option>
+                <option value="PJ">Pessoa Jurídica</option>
+              </select>
+              <input placeholder={newClient.type === 'PJ' ? 'Razão social' : 'Nome do cliente'} value={newClient.name} onChange={(event) => setNewClient({ ...newClient, name: event.target.value })} />
+              {newClient.type === 'PJ' && <input placeholder="Nome fantasia" value={newClient.tradeName} onChange={(event) => setNewClient({ ...newClient, tradeName: event.target.value })} />}
+              <input placeholder={newClient.type === 'PJ' ? 'CNPJ' : 'CPF'} value={newClient.document} onChange={(event) => setNewClient({ ...newClient, document: event.target.value })} />
+              <input placeholder="Telefone/WhatsApp" value={newClient.phone} onChange={(event) => setNewClient({ ...newClient, phone: event.target.value })} />
+              <input placeholder="E-mail" value={newClient.email} onChange={(event) => setNewClient({ ...newClient, email: event.target.value })} />
+              <button type="button" onClick={createClient}>Cadastrar cliente</button>
+            </div>
+          )}
+
+          <div className="field-row">
+            <label>Categoria
+              <div className="inline-action">
+                <select
+                  value={form.category}
+                  onChange={(e) => { update('category', e.target.value); setFormError(''); }}
+                  required
+                >
+                  <option value="">Selecione a categoria</option>
+                  {feeCategories.map((cat) => (
+                    <option key={cat.id} value={cat.name}>{cat.name}</option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  className="ghost"
+                  title="Adicionar nova categoria"
+                  onClick={() => { setQuickCategory(!quickCategory); setCategoryError(''); setNewCategoryName(''); }}
+                >
+                  <Plus size={16} /> Categoria
+                </button>
+              </div>
+              {quickCategory && (
+                <div className="quick-box" style={{ marginTop: '8px' }}>
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    <input
+                      placeholder="Nome da nova categoria"
+                      value={newCategoryName}
+                      onChange={(e) => { setNewCategoryName(e.target.value); setCategoryError(''); }}
+                      onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); createCategory(); } }}
+                      autoFocus
+                      style={{ flex: 1 }}
+                    />
+                    <button type="button" onClick={createCategory} style={{ whiteSpace: 'nowrap' }}>Adicionar</button>
+                  </div>
+                  {categoryError && <span style={{ color: 'var(--color-danger, #ef4444)', fontSize: '0.85rem' }}>{categoryError}</span>}
+                  {feeCategories.length > 0 && (
+                    <div style={{ marginTop: '10px', borderTop: '1px solid var(--color-border, #d7deea)', paddingTop: '10px' }}>
+                      <p style={{ fontSize: '0.8rem', color: 'var(--color-text-light, #5d6b82)', margin: '0 0 6px' }}>Categorias cadastradas:</p>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: '160px', overflowY: 'auto' }}>
+                        {feeCategories.map((cat) => (
+                          <div key={cat.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 8px', background: 'var(--color-bg-alt, #f4f7fc)', borderRadius: '6px' }}>
+                            <span style={{ fontSize: '0.9rem' }}>{cat.name}</span>
+                            <button
+                              type="button"
+                              className="danger"
+                              style={{ padding: '2px 8px', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '4px' }}
+                              title={`Excluir categoria "${cat.name}"`}
+                              onClick={() => {
+                                if (confirm(`Excluir a categoria "${cat.name}" permanentemente?`)) {
+                                  if (onDeleteFeeCategory) onDeleteFeeCategory(cat.id);
+                                  if (form.category === cat.name) update('category', '');
+                                }
+                              }}
+                            >
+                              <Trash2 size={13} /> Excluir
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </label>
+            <label>Valor (R$)
+              <input type="number" step="0.01" value={form.value} onChange={(e) => update('value', e.target.value)} placeholder="0,00" required />
+            </label>
+          </div>
+
+          <label>Situação
+            <select value={form.status} onChange={(e) => update('status', e.target.value)}>
+              <option value="Pendente">Pendente</option>
+              <option value="Pago">Pago</option>
+            </select>
+          </label>
+
+          {formError && <p className="error-message" style={{ color: 'var(--color-danger, #ef4444)', fontWeight: 500 }}>{formError}</p>}
+
+          <div className="modal-actions modal-footer">
+            <button className="ghost" type="button" onClick={onClose}>Cancelar</button>
+            {fee && (
+              <button className="danger" type="button" onClick={() => { if (confirm('Excluir este honorário permanentemente?')) { onDelete(fee.id); onClose(); } }}>Excluir</button>
+            )}
+            <button className="primary" type="submit"><CheckCircle2 size={18} /> Salvar</button>
+          </div>
+        </form>
+      </div>
+    </div>
   );
 }
 

@@ -14,50 +14,84 @@ function withTimeout(promise, ms) {
   ]);
 }
 
-export async function loadAppData(key, fallback) {
-  if (!supabase) return fallback;
+export function toCamelCase(obj) {
+  if (!obj || typeof obj !== 'object') return obj;
+  if (Array.isArray(obj)) return obj.map(toCamelCase);
+  const n = {};
+  Object.keys(obj).forEach((k) => {
+    const nk = k.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
+    n[nk] = typeof obj[k] === 'object' && obj[k] !== null && k !== 'permissions' && k !== 'attachments' && k !== 'history' ? toCamelCase(obj[k]) : obj[k];
+  });
+  return n;
+}
+
+export function toSnakeCase(obj) {
+  if (!obj || typeof obj !== 'object') return obj;
+  if (Array.isArray(obj)) return obj.map(toSnakeCase);
+  const n = {};
+  Object.keys(obj).forEach((k) => {
+    const nk = k.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
+    n[nk] = typeof obj[k] === 'object' && obj[k] !== null && k !== 'permissions' && k !== 'attachments' && k !== 'history' ? toSnakeCase(obj[k]) : obj[k];
+  });
+  return n;
+}
+
+export async function saveRow(table, row) {
+  if (!supabase) return;
   try {
-    const { data, error } = await withTimeout(
-      supabase.from('app_data').select('value').eq('key', key).maybeSingle(),
+    const mapped = toSnakeCase(row);
+    const { error } = await withTimeout(
+      supabase.from(table).upsert(mapped),
       SUPABASE_TIMEOUT_MS
     );
     if (error) throw error;
-    return data?.value ?? fallback;
   } catch (err) {
-    console.error(`Erro ao carregar "${key}" do Supabase:`, err.message);
-    return fallback;
+    console.error(`Erro ao salvar na tabela "${table}":`, err.message);
+    throw err;
   }
 }
 
-export async function saveAppData(key, value) {
+export async function deleteRow(table, id) {
   if (!supabase) return;
   try {
     const { error } = await withTimeout(
-      supabase.from('app_data').upsert({ key, value, updated_at: new Date().toISOString() }),
+      supabase.from(table).delete().eq('id', id),
       SUPABASE_TIMEOUT_MS
     );
     if (error) throw error;
   } catch (err) {
-    console.error(`Erro ao salvar "${key}" no Supabase:`, err.message);
+    console.error(`Erro ao excluir na tabela "${table}":`, err.message);
+    throw err;
   }
 }
 
 export async function loadAllAppData() {
   if (!supabase) return { data: {}, hasAnyData: false };
-  const keys = ['protocols', 'clients', 'employees', 'company'];
-  const results = await Promise.allSettled(
-    keys.map((key) => loadAppData(key, null))
-  );
-  const data = {};
-  let hasAnyData = false;
-  keys.forEach((key, i) => {
-    const result = results[i];
-    if (result.status === 'fulfilled' && result.value !== null && result.value !== undefined) {
-      data[key] = result.value;
-      if (Array.isArray(result.value) ? result.value.length > 0 : true) {
-        hasAnyData = true;
-      }
-    }
-  });
-  return { data, hasAnyData };
+  try {
+    const [protocolsRes, clientsRes, employeesRes, companyRes, feesRes, auditLogsRes, feeCategoriesRes] = await Promise.all([
+      supabase.from('protocols').select('*').order('created_at', { ascending: false }),
+      supabase.from('clients').select('*').order('name', { ascending: true }),
+      supabase.from('employees').select('*').order('name', { ascending: true }),
+      supabase.from('company').select('*').eq('id', 'main').maybeSingle(),
+      supabase.from('fees').select('*').order('created_at', { ascending: false }),
+      supabase.from('audit_logs').select('*').order('timestamp', { ascending: false }).limit(1000),
+      supabase.from('fee_categories').select('*').order('name', { ascending: true }),
+    ]);
+
+    const data = {
+      protocols: toCamelCase(protocolsRes.data || []),
+      clients: toCamelCase(clientsRes.data || []),
+      employees: toCamelCase(employeesRes.data || []),
+      company: toCamelCase(companyRes.data || null),
+      fees: toCamelCase(feesRes.data || []),
+      auditLogs: toCamelCase(auditLogsRes.data || []),
+      feeCategories: toCamelCase(feeCategoriesRes.data || []),
+    };
+
+    let hasAnyData = data.protocols.length > 0 || data.clients.length > 0 || data.employees.length > 1;
+    return { data, hasAnyData };
+  } catch (err) {
+    console.error('Erro ao carregar dados do Supabase:', err.message);
+    return { data: {}, hasAnyData: false };
+  }
 }
