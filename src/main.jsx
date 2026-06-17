@@ -140,6 +140,16 @@ function formatDate(date) {
   return new Date(`${date}T00:00:00`).toLocaleDateString('pt-BR');
 }
 
+function addMonths(dateStr, months) {
+  if (!dateStr) return '';
+  const [year, month, day] = dateStr.split('-').map(Number);
+  const targetDate = new Date(year, month - 1 + months, 1);
+  const maxDays = new Date(targetDate.getFullYear(), targetDate.getMonth() + 1, 0).getDate();
+  const targetDay = Math.min(day, maxDays);
+  const finalDate = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDay);
+  return finalDate.toISOString().slice(0, 10);
+}
+
 function formatDateTime(value) {
   if (!value) return '';
   return new Date(value).toLocaleString('pt-BR');
@@ -1298,13 +1308,15 @@ function FeesView({ fees, clients, feeCategories = [], currentUser, onSaveFee, o
   // Filter fees list
   const filteredFees = useMemo(() => {
     const term = search.toLowerCase();
-    return fees.filter((fee) => {
-      const status = getFeeStatus(fee);
-      const matchesSearch = [fee.code, fee.clientName, fee.category, status].some((item) => item?.toLowerCase().includes(term));
-      const matchesClient = !filterClient || fee.clientId === filterClient;
-      const matchesStatus = !filterStatus || status === filterStatus;
-      return matchesSearch && matchesClient && matchesStatus;
-    });
+    return fees
+      .filter((fee) => {
+        const status = getFeeStatus(fee);
+        const matchesSearch = [fee.code, fee.clientName, fee.category, status].some((item) => item?.toLowerCase().includes(term));
+        const matchesClient = !filterClient || fee.clientId === filterClient;
+        const matchesStatus = !filterStatus || status === filterStatus;
+        return matchesSearch && matchesClient && matchesStatus;
+      })
+      .sort((a, b) => (a.dueDate || '').localeCompare(b.dueDate || ''));
   }, [fees, search, filterClient, filterStatus]);
 
   // Statistics calculation
@@ -1385,13 +1397,38 @@ function FeesView({ fees, clients, feeCategories = [], currentUser, onSaveFee, o
 
   const handleSave = (feeData) => {
     if (editingFee) {
-      onUpdateFee({ ...editingFee, ...feeData });
+      const { installments, ...cleanFeeData } = feeData;
+      onUpdateFee({ ...editingFee, ...cleanFeeData });
     } else {
-      onSaveFee({
-        ...feeData,
-        id: generateId(),
-        code: generateFeeCode(fees),
-      });
+      const installments = feeData.installments || 1;
+      const { installments: _, ...cleanFeeData } = feeData;
+      if (installments > 1) {
+        const year = new Date().getFullYear();
+        const currentYearCount = fees.filter((fee) => String(fee.code).includes(`/${year}`)).length;
+        const totalValue = Number(cleanFeeData.value);
+        const baseVal = Math.floor((totalValue / installments) * 100) / 100;
+        const diff = Math.round((totalValue - baseVal * installments) * 100) / 100;
+
+        for (let i = 0; i < installments; i++) {
+          const val = (i === 0) ? (baseVal + diff) : baseVal;
+          const code = `H-${String(currentYearCount + 1 + i).padStart(5, '0')}/${year} (${i + 1}/${installments})`;
+          const dueDate = addMonths(cleanFeeData.dueDate, i);
+          
+          onSaveFee({
+            ...cleanFeeData,
+            value: val,
+            code: code,
+            dueDate: dueDate,
+            id: generateId(),
+          });
+        }
+      } else {
+        onSaveFee({
+          ...cleanFeeData,
+          id: generateId(),
+          code: generateFeeCode(fees),
+        });
+      }
     }
     closeModal();
   };
@@ -1604,6 +1641,7 @@ function FeeFormModal({ fee, fees, clients, feeCategories = [], currentUser, onC
         clientId: fee.clientId || '',
         value: fee.value || 0,
         status: fee.status || 'Pendente',
+        installments: 1,
       };
     }
     return {
@@ -1613,6 +1651,7 @@ function FeeFormModal({ fee, fees, clients, feeCategories = [], currentUser, onC
       clientId: '',
       value: 0,
       status: 'Pendente',
+      installments: 1,
     };
   });
   const [formError, setFormError] = useState('');
@@ -1739,7 +1778,7 @@ function FeeFormModal({ fee, fees, clients, feeCategories = [], currentUser, onC
             </div>
           )}
 
-          <div className="field-row">
+          <div className="field-row" style={!fee ? { gridTemplateColumns: '2fr 1fr 1fr' } : undefined}>
             <label>Categoria
               <div className="inline-action">
                 <select
@@ -1805,8 +1844,32 @@ function FeeFormModal({ fee, fees, clients, feeCategories = [], currentUser, onC
               )}
             </label>
             <label>Valor (R$)
-              <input type="number" step="0.01" value={form.value} onChange={(e) => update('value', e.target.value)} placeholder="0,00" required />
+              <input
+                type="text"
+                value={!form.value ? '' : new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(form.value)}
+                onChange={(e) => {
+                  const digits = e.target.value.replace(/\D/g, '');
+                  if (!digits) {
+                    update('value', 0);
+                  } else {
+                    update('value', parseFloat(digits) / 100);
+                  }
+                }}
+                placeholder="0,00"
+                required
+              />
             </label>
+            {!fee && (
+              <label>Parcelas
+                <select value={form.installments || 1} onChange={(e) => update('installments', Number(e.target.value))}>
+                  {[...Array(12)].map((_, i) => (
+                    <option key={i + 1} value={i + 1}>
+                      {i + 1}x
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
           </div>
 
           <label>Situação
