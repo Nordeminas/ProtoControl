@@ -297,6 +297,10 @@ function App() {
         setFeeCategories(remote.feeCategories);
         saveStorage(STORAGE_KEYS.feeCategories, remote.feeCategories);
       }
+      if (hasData(remote.auditLogs)) {
+        setAuditLogs(remote.auditLogs);
+        saveStorage(STORAGE_KEYS.auditLogs, remote.auditLogs);
+      }
     }
 
     loadRemoteData();
@@ -441,17 +445,20 @@ function App() {
     setEmployees(nextEmployees);
     setCompany(data.company || emptyCompany);
     setFees(data.fees || []);
+    setFeeCategories(data.feeCategories || []);
     saveDataLocal('protocols', data.protocols || []);
     saveDataLocal('clients', data.clients || []);
     saveDataLocal('employees', nextEmployees);
     saveDataLocal('company', data.company || emptyCompany);
     saveDataLocal('fees', data.fees || []);
+    saveDataLocal('feeCategories', data.feeCategories || []);
     // Persist each row to Supabase
     (data.protocols || []).forEach((p) => saveRow('protocols', p).catch(console.error));
     (data.clients || []).forEach((c) => saveRow('clients', c).catch(console.error));
     nextEmployees.forEach((e) => saveRow('employees', e).catch(console.error));
     if (data.company) saveRow('company', { ...data.company, id: 'main' }).catch(console.error);
     (data.fees || []).forEach((f) => saveRow('fees', f).catch(console.error));
+    (data.feeCategories || []).forEach((c) => saveRow('fee_categories', c).catch(console.error));
   };
 
   const addAuditLog = (action, entityType, entityId, entityName, details = '') => {
@@ -583,7 +590,7 @@ function App() {
         {activeTab === 'fees' && !canAccessFees && <AccessDenied title="Controle de Honorários" message="Você não possui permissão para acessar o controle de honorários." />}
         {activeTab === 'history' && canAccessHistory && <HistoryView logs={auditLogs} />}
         {activeTab === 'history' && !canAccessHistory && <AccessDenied title="Histórico de Modificações" message="Você não possui permissão para visualizar o histórico do sistema." />}
-        {activeTab === 'settings' && isAdmin && <SettingsView company={company} protocols={protocols} clients={clients} employees={employees} fees={fees} onSave={persistCompany} onRestoreBackup={restoreBackup} />}
+        {activeTab === 'settings' && isAdmin && <SettingsView company={company} protocols={protocols} clients={clients} employees={employees} fees={fees} feeCategories={feeCategories} onSave={persistCompany} onRestoreBackup={restoreBackup} />}
         {activeTab === 'settings' && !isAdmin && <AccessDenied title="Configurações da empresa" message="Somente o usuário administrativo pode editar os dados da empresa." />}
       </main>
     </div>
@@ -1128,7 +1135,7 @@ function ClientHistoryModal({ client, protocols, onClose }) {
   );
 }
 
-function SettingsView({ company, protocols, clients, employees, fees = [], onSave, onRestoreBackup }) {
+function SettingsView({ company, protocols, clients, employees, fees = [], feeCategories = [], onSave, onRestoreBackup }) {
   const [form, setForm] = useState(company);
   const fileInputRef = useRef(null);
 
@@ -1149,7 +1156,7 @@ function SettingsView({ company, protocols, clients, employees, fees = [], onSav
   };
 
   const exportBackup = () => {
-    downloadFile(`backup-protocontrol-${todayInput()}.json`, JSON.stringify({ protocols, clients, employees, fees, company: form }, null, 2), 'application/json;charset=utf-8');
+    downloadFile(`backup-protocontrol-${todayInput()}.json`, JSON.stringify({ protocols, clients, employees, fees, feeCategories, company: form }, null, 2), 'application/json;charset=utf-8');
   };
 
   const importBackup = (file) => {
@@ -1171,6 +1178,7 @@ function SettingsView({ company, protocols, clients, employees, fees = [], onSav
           return;
         }
         data.fees = data.fees || [];
+        data.feeCategories = data.feeCategories || [];
         onRestoreBackup(data);
       } catch {
         alert('Não foi possível importar o backup. Verifique se o arquivo JSON é válido.');
