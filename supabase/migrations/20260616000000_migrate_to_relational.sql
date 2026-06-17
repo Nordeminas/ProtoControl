@@ -102,24 +102,38 @@ alter table public.audit_logs enable row level security;
 alter table public.company enable row level security;
 
 -- Create public policies for open access (read/write all)
+drop policy if exists "Allow read on clients" on public.clients;
+drop policy if exists "Allow write on clients" on public.clients;
 create policy "Allow read on clients" on public.clients for select using (true);
 create policy "Allow write on clients" on public.clients for all using (true) with check (true);
 
+drop policy if exists "Allow read on employees" on public.employees;
+drop policy if exists "Allow write on employees" on public.employees;
 create policy "Allow read on employees" on public.employees for select using (true);
 create policy "Allow write on employees" on public.employees for all using (true) with check (true);
 
+drop policy if exists "Allow read on protocols" on public.protocols;
+drop policy if exists "Allow write on protocols" on public.protocols;
 create policy "Allow read on protocols" on public.protocols for select using (true);
 create policy "Allow write on protocols" on public.protocols for all using (true) with check (true);
 
+drop policy if exists "Allow read on fees" on public.fees;
+drop policy if exists "Allow write on fees" on public.fees;
 create policy "Allow read on fees" on public.fees for select using (true);
 create policy "Allow write on fees" on public.fees for all using (true) with check (true);
 
+drop policy if exists "Allow read on audit_logs" on public.audit_logs;
+drop policy if exists "Allow write on audit_logs" on public.audit_logs;
 create policy "Allow read on audit_logs" on public.audit_logs for select using (true);
 create policy "Allow write on audit_logs" on public.audit_logs for all using (true) with check (true);
 
+drop policy if exists "Allow read on company" on public.company;
+drop policy if exists "Allow write on company" on public.company;
 create policy "Allow read on company" on public.company for select using (true);
 create policy "Allow write on company" on public.company for all using (true) with check (true);
 
+drop policy if exists "Allow read on fee_categories" on public.fee_categories;
+drop policy if exists "Allow write on fee_categories" on public.fee_categories;
 create policy "Allow read on fee_categories" on public.fee_categories for select using (true);
 create policy "Allow write on fee_categories" on public.fee_categories for all using (true) with check (true);
 
